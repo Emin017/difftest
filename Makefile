@@ -40,16 +40,8 @@ $(SIM_TOP_V): $(DIFF_SCALA_FILE) $(SCALA_FILE)
 sim-verilog: $(SIM_TOP_V)
 
 # generate difftest files for non-chisel design.
-difftest_verilog:
+difftest_verilog: emu-env
 	mill difftest.test.runMain difftest.DifftestMain -td $(BUILD_DIR)
-
-# co-simulation with DRAMsim3
-ifeq ($(WITH_DRAMSIM3),1)
-ifndef DRAMSIM3_HOME
-$(error DRAMSIM3_HOME is not set)
-endif
-override SIM_ARGS += --with-dramsim3
-endif
 
 TIMELOG = $(BUILD_DIR)/time.log
 TIME_CMD = time -a -o $(TIMELOG)
@@ -120,10 +112,16 @@ endif
 endif
 
 # co-simulation with DRAMsim3
+WITH_DRAMSIM3 = 1
 ifeq ($(WITH_DRAMSIM3),1)
+ifndef DRAMSIM3_HOME
+$(error DRAMSIM3_HOME is not set)
+endif
+override SIM_ARGS += --with-dramsim3
+DRAMSIM3_LIB := $(DRAMSIM3_HOME)/build/libdramsim3.a
 SIM_CXXFLAGS += -I$(DRAMSIM3_HOME)/src
 SIM_CXXFLAGS += -DWITH_DRAMSIM3 -DDRAMSIM3_CONFIG=\\\"$(DRAMSIM3_HOME)/configs/XiangShan.ini\\\" -DDRAMSIM3_OUTDIR=\\\"$(BUILD_DIR)\\\"
-SIM_LDFLAGS  += $(DRAMSIM3_HOME)/build/libdramsim3.a
+SIM_LDFLAGS  += $(DRAMSIM3_LIB)
 endif
 
 ifeq ($(RELEASE),1)
@@ -190,6 +188,7 @@ SIM_CXXFLAGS += -DLLVM_COVER
 SIM_LDFLAGS  += -fsanitize-coverage=trace-pc-guard -fsanitize-coverage=pc-table
 endif
 
+include env.mk
 include verilator.mk
 include vcs.mk
 
