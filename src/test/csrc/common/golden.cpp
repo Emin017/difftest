@@ -1,8 +1,8 @@
 /***************************************************************************************
-* Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
+* Copyright (c) 2020-2023 Institute of Computing Technology, Chinese Academy of Sciences
 * Copyright (c) 2020-2021 Peng Cheng Laboratory
 *
-* XiangShan is licensed under Mulan PSL v2.
+* DiffTest is licensed under Mulan PSL v2.
 * You can use this software according to the terms and conditions of the Mulan PSL v2.
 * You may obtain a copy of Mulan PSL v2 at:
 *          http://license.coscl.org.cn/MulanPSL2
@@ -14,34 +14,22 @@
 * See the Mulan PSL v2 for more details.
 ***************************************************************************************/
 
-#include "ref.h"
+#include "golden.h"
 #include "ram.h"
-
-typedef union PageTableEntry {
-  struct {
-    uint32_t v   : 1;
-    uint32_t r   : 1;
-    uint32_t w   : 1;
-    uint32_t x   : 1;
-    uint32_t u   : 1;
-    uint32_t g   : 1;
-    uint32_t a   : 1;
-    uint32_t d   : 1;
-    uint32_t rsw : 2;
-    uint64_t ppn :44;
-    uint32_t pad :10;
-  };
-  uint64_t val;
-} PTE;
-
-#define VPNi(vpn, i) (((vpn) >> (18 - 9 * (i))) & 0x1ff)
+#ifndef CONFIG_NO_DIFFTEST
+#include <goldenmem.h>
+#endif // CONFIG_NO_DIFFTEST
 
 extern "C" uint8_t pte_helper(uint64_t satp, uint64_t vpn, uint64_t *pte, uint8_t *level) {
   uint64_t pg_base = satp << 12, pte_addr;
   PTE *pte_p = (PTE *)pte;
   for (*level = 0; *level < 3; (*level)++) {
     pte_addr = pg_base + VPNi(vpn, *level) * sizeof(uint64_t);
+#ifdef CONFIG_NO_DIFFTEST
     pte_p->val = pmem_read(pte_addr);
+#else
+    read_goldenmem(pte_addr, &pte_p->val, 8);
+#endif // CONFIG_NO_DIFFTEST
     pg_base = pte_p->ppn << 12;
     // pf
     if (!pte_p->v) {
