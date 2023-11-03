@@ -29,16 +29,6 @@ NUM_CORES  ?= 1
 BUILD_DIR  = $(DESIGN_DIR)/build
 SIM_TOP_V  = $(DESIGN_DIR)/vsrc/$(SIM_TOP).v
 
-DIFF_SCALA_FILE = $(shell find ./src/main/scala -name '*.scala')
-SCALA_FILE = $(shell find $(DESIGN_DIR)/src/main/scala -name '*.scala' 2>/dev/null)
-
-# generate SimTop.v
-$(SIM_TOP_V): $(DIFF_SCALA_FILE) $(SCALA_FILE)
-#	$(MAKE) -C $(DESIGN_DIR) sim-verilog
-
-# build simulation top verilog
-sim-verilog: $(SIM_TOP_V)
-
 # generate difftest files for non-chisel design.
 difftest_verilog: emu-env
 	mill difftest.test.runMain difftest.DifftestMain -td $(BUILD_DIR)
@@ -195,4 +185,4 @@ include vcs.mk
 clean: vcs-clean
 	rm -rf $(BUILD_DIR)
 
-.PHONY: sim-verilog emu difftest_verilog clean
+.PHONY: emu difftest_verilog clean
