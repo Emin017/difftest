@@ -160,4 +160,4 @@ coverage:
 	@python3 scripts/coverage/statistics.py $(COVERAGE_DIR)/$(SIM_TOP)_annotated.v > $(COVERAGE_DIR)/coverage_$(SIM_TOP).log
 	@mv $(COVERAGE_DATA) $(COVERAGE_DIR)
 
-.PHONY: build_emu_local
+.PHONY: build_emu_local run emu
