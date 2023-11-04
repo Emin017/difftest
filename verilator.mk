@@ -148,6 +148,10 @@ endif
 
 emu: $(EMU)
 
+args = -b 0 -e 10
+run: $(EMU)
+	$(EMU) $(args) --diff $(REF_SO) -i $(img)
+
 COVERAGE_DATA ?= $(shell find $(BUILD_DIR) -maxdepth 1 -name "*.dat")
 COVERAGE_DIR  ?= $(DESIGN_DIR)/$(basename $(notdir $(COVERAGE_DATA)))
 coverage:
