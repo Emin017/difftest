@@ -14,20 +14,37 @@
 * See the Mulan PSL v2 for more details.
 ***************************************************************************************/
 
-#ifndef COMPRESS_H
-#define COMPRESS_H
+#ifndef __NEMU_PROXY_H
+#define __NEMU_PROXY_H
+
+#include <unistd.h>
+#include <dlfcn.h>
 
 #include "common.h"
 
-#include <zlib.h>
-#include <sys/time.h>
+class NemuProxy {
+public:
+  // public callable functions
+  void (*memcpy)(paddr_t nemu_addr, void *dut_buf, size_t n, bool direction);
+  void (*regcpy)(void *dut, bool direction);
+  void (*csrcpy)(void *dut, bool direction);
+  void (*uarchstatus_cpy)(void *dut, bool direction);
+  void (*exec)(uint64_t n);
+  vaddr_t (*guided_exec)(void *disambiguate_para);
+  void (*raise_intr)(uint64_t no);
+  void (*isa_reg_display)();
 
-#define LOAD_SNAPSHOT 0
-#define LOAD_RAM 1
+  NemuProxy(int coreid);
+private:
+};
 
-double calcTime(timeval s, timeval e);
 
+struct ExecutionGuide {
+  uint64_t exceptionNo;
+  uint64_t mtval;
+  uint64_t stval;
+};
 
-void nonzero_large_memcpy(const void* __restrict dest, const void* __restrict src, size_t n);
+void ref_misc_put_gmaddr(uint8_t* ptr);
 
 #endif

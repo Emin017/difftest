@@ -14,20 +14,36 @@
 * See the Mulan PSL v2 for more details.
 ***************************************************************************************/
 
-#ifndef COMPRESS_H
-#define COMPRESS_H
+import "DPI-C" function void ram_write_helper
+(
+  input  longint    wIdx,
+  input  longint    wdata,
+  input  longint    wmask,
+  input  bit        wen
+);
 
-#include "common.h"
+import "DPI-C" function longint ram_read_helper
+(
+  input  bit        en,
+  input  longint    rIdx
+);
 
-#include <zlib.h>
-#include <sys/time.h>
+module RAMHelper(
+  input         clk,
+  input         en,
+  input  [63:0] rIdx,
+  output [63:0] rdata,
+  input  [63:0] wIdx,
+  input  [63:0] wdata,
+  input  [63:0] wmask,
+  input         wen
+);
 
-#define LOAD_SNAPSHOT 0
-#define LOAD_RAM 1
+  assign rdata = ram_read_helper(en, rIdx);
 
-double calcTime(timeval s, timeval e);
+  always @(posedge clk) begin
+    ram_write_helper(wIdx, wdata, wmask, wen && en);
+  end
 
+endmodule
 
-void nonzero_large_memcpy(const void* __restrict dest, const void* __restrict src, size_t n);
-
-#endif

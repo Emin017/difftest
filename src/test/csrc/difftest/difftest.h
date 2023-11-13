@@ -1,435 +1,227 @@
 /***************************************************************************************
- * Copyright (c) 2020-2023 Institute of Computing Technology, Chinese Academy of Sciences
- * Copyright (c) 2020-2021 Peng Cheng Laboratory
- *
- * DiffTest is licensed under Mulan PSL v2.
- * You can use this software according to the terms and conditions of the Mulan PSL v2.
- * You may obtain a copy of Mulan PSL v2 at:
- *          http://license.coscl.org.cn/MulanPSL2
- *
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- *
- * See the Mulan PSL v2 for more details.
- ***************************************************************************************/
+* Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
+* Copyright (c) 2020-2021 Peng Cheng Laboratory
+*
+* XiangShan is licensed under Mulan PSL v2.
+* You can use this software according to the terms and conditions of the Mulan PSL v2.
+* You may obtain a copy of Mulan PSL v2 at:
+*          http://license.coscl.org.cn/MulanPSL2
+*
+* THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+* EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+* MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+*
+* See the Mulan PSL v2 for more details.
+***************************************************************************************/
 
 #ifndef __DIFFTEST_H__
 #define __DIFFTEST_H__
 
-#include <vector>
-
 #include "common.h"
-#include "difftrace.h"
-#ifdef FUZZING
-#include "emu.h"
-#endif // FUZZING
-#include "golden.h"
-#include "refproxy.h"
 
-enum
-{
-    ICACHEID,
-    DCACHEID,
-    PAGECACHEID
-};
-enum
-{
-    ITLBID,
-    LDTLBID,
-    STTLBID
-};
+#include "nemuproxy.h"
+#define DIFF_PROXY NemuProxy
 
-#define DEBUG_MEM_REGION(v, f) (f <= (DEBUG_MEM_BASE + 0x1000) && f >= DEBUG_MEM_BASE && v)
-#define IS_LOAD_STORE(instr) (((instr & 0x7f) == 0x03) || ((instr & 0x7f) == 0x23))
-#define IS_TRIGGERCSR(instr) (((instr & 0x7f) == 0x73) && ((instr & (0xff0 << 20)) == (0x7a0 << 20)))
-#define IS_DEBUGCSR(instr) (((instr & 0x7f) == 0x73) && ((instr & (0xffe << 20)) == (0x7b0 << 20))) // 7b0 and 7b1
-#ifdef DEBUG_MODE_DIFF
-#define DEBUG_MODE_SKIP(v, f, instr) DEBUG_MEM_REGION(v, f) && (IS_LOAD_STORE(instr) || IS_TRIGGERCSR(instr))
-#else
-#define DEBUG_MODE_SKIP(v, f, instr) false
-#endif
+#define DIFFTEST_CORE_NUMBER  NUM_CORES
 
-enum retire_inst_type
-{
-    RET_NORMAL = 0,
-    RET_INT,
-    RET_EXC
-};
+enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
+enum { REF_TO_DUT, DUT_TO_REF };
+enum { REF_TO_DIFFTEST, DUT_TO_DIFFTEST };
+// DIFFTEST_TO_DUT ~ REF_TO_DUT ~ REF_TO_DIFFTEST
+// DIFFTEST_TO_REF ~ DUT_TO_REF ~ DUT_TO_DIFFTEST
+#define CP printf("%s: %d\n", __FILE__, __LINE__);fflush( stdout );
 
-enum retire_mem_type
-{
-    RET_OTHER = 0,
-    RET_LOAD,
-    RET_STORE
-};
 
-class CommitTrace
-{
-  public:
-    uint64_t pc;
-    uint32_t inst;
+// Difftest structures
+// trap events: self-defined traps
+typedef struct {
+  uint8_t  valid = 0;
+  uint8_t  code;
+  uint64_t pc;
+  uint64_t cycleCnt = 0;
+  uint64_t instrCnt = 0;
+} trap_event_t;
 
-    CommitTrace(uint64_t pc, uint32_t inst) : pc(pc), inst(inst)
-    {
-    }
-    virtual ~CommitTrace()
-    {
-    }
-    virtual const char *get_type() = 0;
-    virtual void display(bool use_spike = false);
+// architectural events: interrupts and exceptions
+// whose priority should be higher than normal commits
+typedef struct {
+  uint32_t interrupt = 0;
+  uint32_t exception = 0;
+  uint64_t exceptionPC = 0;
+  uint32_t exceptionInst = 0;
+} arch_event_t;
 
-  protected:
-    virtual void display_custom() = 0;
-};
+typedef struct {
+  uint8_t  valid = 0;
+  uint64_t pc;
+  uint32_t inst;
+  uint8_t  skip;
+  uint8_t  isRVC;
+  uint8_t  scFailed;
+  uint8_t  fused;
+  uint8_t  wen;
+  uint8_t  wdest;
+  uint64_t wdata;
+} instr_commit_t;
 
-class InstrTrace : public CommitTrace
-{
-  public:
-    uint8_t wen;
-    uint8_t dest;
-    uint64_t data;
-    char tag;
+typedef struct {
+  uint64_t gpr[32];
+} arch_reg_state_t;
 
-    uint16_t robidx;
-    uint8_t isLoad;
-    uint8_t lqidx;
-    uint8_t isStore;
-    uint8_t sqidx;
+typedef struct __attribute__((packed)) {
+  uint64_t this_pc;
+  uint64_t mstatus;
+  uint64_t mcause;
+  uint64_t mepc;
+  uint64_t sstatus;
+  uint64_t scause;
+  uint64_t sepc;
+  uint64_t satp;
+  uint64_t mip;
+  uint64_t mie;
+  uint64_t mscratch;
+  uint64_t sscratch;
+  uint64_t mideleg;
+  uint64_t medeleg;
+  uint64_t mtval;
+  uint64_t stval;
+  uint64_t mtvec;
+  uint64_t stvec;
+  uint64_t priviledgeMode;
+} arch_csr_state_t;
 
-    InstrTrace(uint64_t pc, uint32_t inst, uint8_t wen, uint8_t dest, uint64_t data, uint8_t lqidx, uint8_t sqidx,
-               uint16_t robidx, uint8_t isLoad, uint8_t isStore, bool skip = false, bool delayed = false) :
-        CommitTrace(pc, inst),
-        robidx(robidx), isLoad(isLoad), lqidx(lqidx), isStore(isStore), sqidx(sqidx), wen(wen), dest(dest), data(data),
-        tag(get_tag(skip, delayed))
-    {
-    }
-    virtual inline const char *get_type()
-    {
-        return "commit";
-    };
+const int DIFFTEST_NR_REG = (sizeof(arch_reg_state_t) + sizeof(arch_csr_state_t)) / sizeof(uint64_t);
 
-  protected:
-    void display_custom()
-    {
-        printf(" wen %d dst %02d data %016lx idx %03x", wen, dest, data, robidx);
-        if (isLoad)
-        {
-            printf(" (%02x)", lqidx);
-        }
-        if (isStore)
-        {
-            printf(" (%02x)", sqidx);
-        }
-        if (tag)
-        {
-            printf(" (%c)", tag);
-        }
-    }
+typedef struct {
+  trap_event_t     trap;
+  arch_event_t     event;
+  instr_commit_t   commit[DIFFTEST_COMMIT_WIDTH];
+  arch_reg_state_t regs;
+  arch_csr_state_t csr;
+} difftest_core_state_t;
 
-  private:
-    char get_tag(bool skip, bool delayed)
-    {
-        char t = '\0';
-        if (skip)
-            t |= 'S';
-        if (delayed)
-            t |= 'D';
-        return t;
-    }
+class DiffState {
+public:
+  DiffState();
+  void display(int coreid);
 };
 
-class ExceptionTrace : public CommitTrace
-{
-  public:
-    uint64_t cause;
-    ExceptionTrace(uint64_t pc, uint32_t inst, uint64_t cause) : CommitTrace(pc, inst), cause(cause)
-    {
-    }
-    virtual inline const char *get_type()
-    {
-        return "exception";
-    };
+class Difftest {
+public:
+  // Difftest public APIs for testbench
+  // Its backend should be cross-platform (NEMU, Spike, ...)
+  // Initialize difftest environments
+  Difftest(int coreid);
+void record_group(uint64_t pc, uint64_t count) {
+    retire_group_pc_queue [retire_group_pointer] = pc;
+    retire_group_cnt_queue[retire_group_pointer] = count;
+    retire_group_pointer = (retire_group_pointer + 1) % DEBUG_GROUP_TRACE_SIZE;
+  };
+  void record_inst(uint64_t pc, uint32_t inst, uint8_t en, uint8_t dest, uint64_t data, bool skip) {
+    retire_inst_pc_queue   [retire_inst_pointer] = pc;
+    retire_inst_inst_queue [retire_inst_pointer] = inst;
+    retire_inst_wen_queue  [retire_inst_pointer] = en;
+    retire_inst_wdst_queue [retire_inst_pointer] = dest;
+    retire_inst_wdata_queue[retire_inst_pointer] = data;
+    retire_inst_skip_queue[retire_inst_pointer] = skip;
+    retire_inst_type_queue[retire_inst_pointer] = RET_NORMAL;
+    retire_inst_pointer = (retire_inst_pointer + 1) % DEBUG_INST_TRACE_SIZE;
+  };
+  void record_abnormal_inst(uint64_t pc, uint32_t inst, uint32_t abnormal_type, uint64_t cause) {
+    retire_inst_pc_queue   [retire_inst_pointer] = pc;
+    retire_inst_inst_queue [retire_inst_pointer] = inst;
+    retire_inst_wdata_queue[retire_inst_pointer] = cause; // write cause to data queue to save space
+    retire_inst_type_queue[retire_inst_pointer] = abnormal_type;
+    retire_inst_pointer = (retire_inst_pointer + 1) % DEBUG_INST_TRACE_SIZE;
+  };
 
-  protected:
-    void display_custom()
-    {
-        printf(" cause %016lx", cause);
-    }
-};
+  void display(int coreid);
 
-class InterruptTrace : public ExceptionTrace
-{
-  public:
-    InterruptTrace(uint64_t pc, uint32_t inst, uint64_t cause) : ExceptionTrace(pc, inst, cause)
-    {
-    }
-    virtual inline const char *get_type()
-    {
-        return "interrupt";
-    }
-};
+private:
+  int retire_group_pointer = 0;
+  uint64_t retire_group_pc_queue[DEBUG_GROUP_TRACE_SIZE] = {0};
+  uint32_t retire_group_cnt_queue[DEBUG_GROUP_TRACE_SIZE] = {0};
 
-class DiffState
-{
-  public:
-    bool dump_commit_trace = false;
+  int retire_inst_pointer = 0;
+  uint64_t retire_inst_pc_queue[DEBUG_INST_TRACE_SIZE] = {0};
+  uint32_t retire_inst_inst_queue[DEBUG_INST_TRACE_SIZE] = {0};
+  uint64_t retire_inst_wen_queue[DEBUG_INST_TRACE_SIZE] = {0};
+  uint32_t retire_inst_wdst_queue[DEBUG_INST_TRACE_SIZE] = {0};
+  uint64_t retire_inst_wdata_queue[DEBUG_INST_TRACE_SIZE] = {0};
+  uint32_t retire_inst_type_queue[DEBUG_INST_TRACE_SIZE] = {0};
+  bool retire_inst_skip_queue[DEBUG_INST_TRACE_SIZE] = {0};
+}
 
-    DiffState();
-    void record_group(uint64_t pc, uint64_t count)
-    {
-        retire_group_pc_queue[retire_group_pointer] = pc;
-        retire_group_cnt_queue[retire_group_pointer] = count;
-        retire_group_pointer = (retire_group_pointer + 1) % DEBUG_GROUP_TRACE_SIZE;
-    };
-    void record_inst(uint64_t pc, uint32_t inst, uint8_t en, uint8_t dest, uint64_t data, bool skip, bool delayed,
-                     uint8_t lqidx, uint8_t sqidx, uint16_t robidx, uint8_t isLoad, uint8_t isStore)
-    {
-        push_back_trace(new InstrTrace(pc, inst, en, dest, data, lqidx, sqidx, robidx, isLoad, isStore, skip, delayed));
-        retire_inst_pointer = (retire_inst_pointer + 1) % DEBUG_INST_TRACE_SIZE;
-    };
-    void record_exception(uint64_t pc, uint32_t inst, uint64_t cause)
-    {
-        push_back_trace(new ExceptionTrace(pc, inst, cause));
-        retire_inst_pointer = (retire_inst_pointer + 1) % DEBUG_INST_TRACE_SIZE;
-    };
-    void record_interrupt(uint64_t pc, uint32_t inst, uint64_t cause)
-    {
-        push_back_trace(new InterruptTrace(pc, inst, cause));
-        retire_inst_pointer = (retire_inst_pointer + 1) % DEBUG_INST_TRACE_SIZE;
-    };
-    void display(int coreid);
+class Difftest {
+public:
+  // Difftest public APIs for testbench
+  // Its backend should be cross-platform (NEMU, Spike, ...)
+  // Initialize difftest environments
+  Difftest(int coreid);
+  DIFF_PROXY *proxy = NULL;
+  uint32_t num_commit = 0; // # of commits if made progress
+  bool has_commit = false;
+  // Trigger a difftest checking procdure
+  int step();
+  void update_nemuproxy(int);
+  inline bool get_trap_valid() {
+    return dut.trap.valid;
+  }
+  inline int get_trap_code() {
+    return dut.trap.code;
+  }
+  void display();
 
-  private:
-    const static int DEBUG_GROUP_TRACE_SIZE = 16;
-    int retire_group_pointer = 0;
-    uint64_t retire_group_pc_queue[DEBUG_GROUP_TRACE_SIZE] = {0};
-    uint32_t retire_group_cnt_queue[DEBUG_GROUP_TRACE_SIZE] = {0};
+  // Difftest public APIs for dut: called from DPI-C functions (or testbench)
+  // These functions generally do nothing but copy the information to core_state.
+  inline trap_event_t *get_trap_event() {
+    return &(dut.trap);
+  }
+  inline arch_event_t *get_arch_event() {
+    return &(dut.event);
+  }
+  inline instr_commit_t *get_instr_commit(uint8_t index) {
+    return &(dut.commit[index]);
+  }
+  inline arch_csr_state_t *get_csr_state() {
+    return &(dut.csr);
+  }
+  inline arch_reg_state_t *get_arch_reg_state() {
+    return &(dut.regs);
+  }
 
-    const static int DEBUG_INST_TRACE_SIZE = 32;
-    int retire_inst_pointer = 0;
-    std::vector<CommitTrace *> commit_trace;
 
-    void push_back_trace(CommitTrace *trace)
-    {
-        if (commit_trace[retire_inst_pointer])
-        {
-            delete commit_trace[retire_inst_pointer];
-        }
-        commit_trace[retire_inst_pointer] = trace;
-        if (dump_commit_trace)
-        {
-            display_commit_instr(retire_inst_pointer);
-        }
-    }
-    void display_commit_count(int i);
-    void display_commit_instr(int i)
-    {
-        extern int test_spike();
-        int spike_invalid = test_spike();
-        display_commit_instr(retire_inst_pointer, spike_invalid);
-        fflush(stdout);
-    }
-    void display_commit_instr(int i, bool spike_invalid);
-};
+private:
+  const uint64_t firstCommit_limit = 5000;
+  const uint64_t stuck_limit = 5000;
 
-class Difftest
-{
-  public:
-    DiffTestState *dut;
-    const int batch_size = 1;
+  int id;
+  difftest_core_state_t dut;
+  difftest_core_state_t ref;
+  uint64_t *ref_regs_ptr = (uint64_t*)&ref.regs;
+  uint64_t *dut_regs_ptr = (uint64_t*)&dut.regs;
 
-    // Difftest public APIs for testbench
-    // Its backend should be cross-platform (NEMU, Spike, ...)
-    // Initialize difftest environments
-    Difftest(int coreid);
-    ~Difftest();
-    REF_PROXY *proxy = NULL;
-    uint32_t num_commit = 0; // # of commits if made progress
-    bool has_commit = false;
-    // Trigger a difftest checking procdure
-    int step();
-    void update_nemuproxy(int, size_t);
-    inline bool get_trap_valid()
-    {
-        return dut->trap.hasTrap;
-    }
-    inline int get_trap_code()
-    {
-        return dut->trap.code;
-    }
-    void display();
-    void set_trace(const char *name, bool is_read)
-    {
-        difftrace = new DiffTrace(name, is_read);
-    }
-    void trace()
-    {
-        if (difftrace)
-        {
-            if (difftrace->is_read)
-                difftrace->read_next(dut);
-            else
-                difftrace->append(dut);
-        }
-    }
+  bool progress = false;
+  uint64_t ticks = 0;
+  uint64_t last_commit = 0;
 
-    // Difftest public APIs for dut: called from DPI-C functions (or testbench)
-    // These functions generally do nothing but copy the information to core_state.
-    inline DifftestTrapEvent *get_trap_event()
-    {
-        return &(dut->trap);
-    }
-    uint64_t *arch_reg(uint8_t src, bool is_fp = false)
-    {
-        return
-#ifdef CONFIG_DIFFTEST_ARCHFPREGSTATE
-            is_fp ? dut->regs_fp.value + src :
-#endif
-                  dut->regs_int.value + src;
-    }
-    inline DiffTestState *get_dut()
-    {
-        return dut;
-    }
+  uint64_t nemu_this_pc;
+  DiffState *state = NULL;
 
-#ifdef DEBUG_REFILL
-    void save_track_instr(uint64_t instr)
-    {
-        track_instr = instr;
-    }
-#endif
 
-#ifdef DEBUG_MODE_DIFF
-    void debug_mode_copy(uint64_t addr, size_t size, uint32_t data)
-    {
-        proxy->debug_mem_sync(addr, &data, size);
-    }
-#endif
-
-    void set_commit_trace(bool enable)
-    {
-        state->dump_commit_trace = enable;
-    }
-
-  protected:
-    DiffTrace *difftrace = nullptr;
-
-#ifdef CONFIG_DIFFTEST_MERGE
-    const uint64_t timeout_scale = 256;
-#else
-    const uint64_t timeout_scale = 1;
-#endif // CONFIG_DIFFTEST_MERGE
-#if defined(CPU_NUTSHELL) || defined(CPU_ROCKET_CHIP)
-    const uint64_t firstCommit_limit = 1000;
-    const uint64_t stuck_limit = 500 * timeout_scale;
-#elif defined(CPU_XIANGSHAN)
-    const uint64_t firstCommit_limit = 15000;
-    const uint64_t stuck_limit = 15000 * timeout_scale;
-#endif
-    const uint64_t delay_wb_limit = 80;
-
-    int id;
-
-    bool progress = false;
-    uint64_t ticks = 0;
-    uint64_t last_commit = 0;
-
-    uint64_t nemu_this_pc;
-    DiffState *state = NULL;
-#ifdef DEBUG_REFILL
-    uint64_t track_instr = 0;
-#endif
-
-    void update_last_commit()
-    {
-        last_commit = ticks;
-    }
-    int check_timeout();
-    void do_first_instr_commit();
-    void do_interrupt();
-    void do_exception();
-    int do_instr_commit(int index);
-    int do_store_check();
-    int do_refill_check(int cacheid);
-    int do_irefill_check();
-    int do_drefill_check();
-    int do_ptwrefill_check();
-    int do_l1tlb_check();
-    int do_l2tlb_check();
-    int do_golden_memory_update();
-    inline uint64_t get_commit_data(int i)
-    {
-#ifdef CONFIG_DIFFTEST_ARCHFPREGSTATE
-        if (dut->commit[i].fpwen)
-        {
-            return
-#ifdef CONFIG_DIFFTEST_FPWRITEBACK
-                dut->wb_fp[dut->commit[i].wpdest].data;
-#else
-                dut->regs_fp.value[dut->commit[i].wdest];
-#endif // CONFIG_DIFFTEST_FPWRITEBACK
-        }
-        else
-#endif // CONFIG_DIFFTEST_ARCHFPREGSTATE
-#ifdef CONFIG_DIFFTEST_ARCHVECREGSTATE
-            if (dut->commit[i].vecwen)
-        {
-            return dut->regs_vec.value[dut->commit[i].wdest];
-        }
-        else
-#endif // CONFIG_DIFFTEST_ARCHVECREGSTATE
-            return
-#ifdef CONFIG_DIFFTEST_INTWRITEBACK
-                dut->wb_int[dut->commit[i].wpdest].data;
-#else
-            dut->regs_int.value[dut->commit[i].wdest];
-#endif // CONFIG_DIFFTEST_INTWRITEBACK
-    }
-    inline bool has_wfi()
-    {
-        return dut->trap.hasWFI;
-    }
-    inline bool in_disambiguation_state()
-    {
-        static bool was_found = false;
-#ifdef FUZZING
-        // Only in fuzzing mode
-        if (proxy->in_disambiguation_state())
-        {
-            was_found = true;
-            dut->trap.hasTrap = 1;
-            dut->trap.code = STATE_AMBIGUOUS;
-#ifdef FUZZER_LIB
-            stats.exit_code = SimExitCode::ambiguous;
-#endif // FUZZER_LIB
-        }
-#endif // FUZZING
-        return was_found;
-    }
-
-#ifdef CONFIG_DIFFTEST_ARCHINTDELAYEDUPDATE
-    int delayed_int[32] = {0};
-#endif // CONFIG_DIFFTEST_ARCHINTDELAYEDUPDATE
-#ifdef CONFIG_DIFFTEST_ARCHFPDELAYEDUPDATE
-    int delayed_fp[32] = {0};
-#endif // CONFIG_DIFFTEST_ARCHFPDELAYEDUPDATE
-    int update_delayed_writeback();
-    int apply_delayed_writeback();
-
-    void raise_trap(int trapCode);
+  int check_timeout();
+  void do_first_instr_commit();
+  void do_interrupt();
+  void do_exception();
+  void do_instr_commit(int index);
+  void raise_trap(int trapCode);
+  void clear_step();
 };
 
 extern Difftest **difftest;
 int difftest_init();
 int difftest_step();
 int difftest_state();
-void difftest_finish();
-void difftest_trace();
-int init_nemuproxy(size_t);
-
-#ifdef CONFIG_DIFFTEST_SQUASH
-extern "C" void difftest_squash_set(int enable, const char *scope_name);
-#endif // CONFIG_DIFFTEST_SQUASH
+int init_nemuproxy();
 
 #endif
