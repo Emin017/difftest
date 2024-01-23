@@ -50,3 +50,12 @@
    - `wdata`
 
 6. **Support AXI4 Difftest with DRAMSim3**
+
+## software version
+1. verilator 5.020
+2. DRAMSim3  master
+3. chisel 6.0.0
+4. scala 2.13.12
+5. mill 0.11.6
+
+refer [xs-difftest](https://github.com/OpenXiangShan/difftest)

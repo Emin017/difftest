@@ -1,4 +1,7 @@
 .metals/
 .vscode/
 .github/
-.scala-build
+.scala-build/
+out/
+.hdl_checker/
+.bsp/
