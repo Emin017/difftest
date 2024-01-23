@@ -14,6 +14,11 @@
 # See the Mulan PSL v2 for more details.
 #***************************************************************************************
 
+export NOOP_HOME = $(abspath $(shell pwd)/..)
+export DRAMSIM3_HOME=$(NOOP_HOME)/DRAMsim3
+export NEMU_HOME=$(NOOP_HOME)/NEMU
+export DIFFTEST_HOME=$(NOOP_HOME)/difftest
+
 SIM_TOP    ?= SimTop
 DESIGN_DIR ?= ..
 NUM_CORES  ?= 1
@@ -26,7 +31,7 @@ SCALA_FILE = $(shell find $(DESIGN_DIR)/src/main/scala -name '*.scala')
 
 # generate SimTop.v
 $(SIM_TOP_V): $(DIFF_SCALA_FILE) $(SCALA_FILE)
-	$(MAKE) -C $(DESIGN_DIR) sim-verilog
+	$(MAKE) -C $(DESIGN_DIR) verilog
 
 # co-simulation with DRAMsim3
 ifeq ($(WITH_DRAMSIM3),1)
