@@ -22,9 +22,10 @@ export DIFFTEST_HOME=$(NOOP_HOME)/difftest
 SIM_TOP    ?= SimTop
 DESIGN_DIR ?= ..
 NUM_CORES  ?= 1
+RTL_SUFFIX ?= v
 
 BUILD_DIR = $(DESIGN_DIR)/build
-SIM_TOP_V = $(BUILD_DIR)/$(SIM_TOP).v
+SIM_TOP_V = $(BUILD_DIR)/$(SIM_TOP).$(RTL_SUFFIX)
 
 DIFF_SCALA_FILE = $(shell find ./src/main/scala -name '*.scala')
 SCALA_FILE = $(shell find $(DESIGN_DIR)/src/main/scala -name '*.scala')
